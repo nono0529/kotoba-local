@@ -1,0 +1,9 @@
+{
+  "author": "egg rolls",
+  "url": "https://github.com/5mdld/anki-jlpt-decks",
+  "license": "CC BY-NC 4.0",
+  "downloaded": "2026-09-09",
+  "sha256": "30e9350c92c7bdeaf0f4c0317c9a0f659eb32e606a69870176deff159559eb1a",
+  "changes": "Converted Anki TSV to JSON; retained simplified Chinese, Japanese, readings, pitch, usage examples; removed HTML, audio references, traditional Chinese and Anki-specific fields; sorted by upstream ordering. Audio uses device speech synthesis, not upstream recordings.",
+  "count": 10641
+}
