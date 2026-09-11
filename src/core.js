@@ -4,7 +4,36 @@ export const APP_VERSION = 1;
 export const scheduler = fsrs({ request_retention: 0.9, enable_fuzz: false });
 export { Rating };
 export function initialState() {
-  return { version: APP_VERSION, settings: { book: 'N5', goal: 20, voice: '', rate: 0.85, autoAudio: false, showReading: true, theme: 'light' }, cards: {}, favorites: [], notes: {}, logs: [], customWords: [], customBooks: [], session: null };
+  return { version: APP_VERSION, settings: { book: 'N5', goal: 20, voice: '', rate: 0.85, autoAudio: true, showReading: true, theme: 'light' }, cards: {}, favorites: [], notes: {}, logs: [], customWords: [], customBooks: [], session: null, practiceSessions: {}, activeSessionKey: 'study', experienceVersion: 2 };
+}
+export function sessionKey(kind, mode='recognize') {
+  return kind==='practice' ? `practice-${mode}` : kind==='favorites' ? 'favorites' : 'study';
+}
+export function currentSession(state) {
+  return !state.activeSessionKey || state.activeSessionKey==='study' ? state.session : state.practiceSessions?.[state.activeSessionKey];
+}
+export function setSession(state, key, session) {
+  return key==='study' ? {...state,session,activeSessionKey:key} : {...state,practiceSessions:{...state.practiceSessions,[key]:session},activeSessionKey:key};
+}
+export function migrateState(state) {
+  const draft=structuredClone(state);
+  draft.practiceSessions ||= {};
+  draft.activeSessionKey ||= 'study';
+  if(draft.experienceVersion!==2){
+    draft.settings.autoAudio=true;
+    draft.experienceVersion=2;
+    if(draft.session && ['practice','favorites'].includes(draft.session.kind)) {
+      const key=sessionKey(draft.session.kind,draft.session.mode);
+      draft.practiceSessions[key]=draft.session;draft.session=null;draft.activeSessionKey=key;
+    }
+  }
+  if(!['study','practice-write','practice-listen','practice-recognize','favorites'].includes(draft.activeSessionKey))draft.activeSessionKey='study';
+  return draft;
+}
+export function shuffle(items, random=Math.random) {
+  const result=[...items];
+  for(let i=result.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[result[i],result[j]]=[result[j],result[i]];}
+  return result;
 }
 export function dayKey(date = new Date()) {
   const d = new Date(date); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -27,20 +56,20 @@ export function stats(state, words, now = new Date()) {
     answersToday: logs.length, learned: entries.length, mastered: entries.filter(([,c])=>c.state===2&&c.scheduled_days>=21).length,
     due: entries.filter(([,c])=>new Date(c.due)<=now).map(([id])=>id).sort((a,b)=>new Date(state.cards[a].due)-new Date(state.cards[b].due)), streak };
 }
-export function makeSession(state, words, kind='learn', mode='recognize', now=new Date()) {
+export function makeSession(state, words, kind='learn', mode='recognize', now=new Date(),random=Math.random) {
   const s=stats(state,words,now), pool=words.filter(w=>w.book===state.settings.book);
   let queue=[];
   if(kind==='review')queue=s.due.slice(0,100);
-  else if(kind==='learn')queue=pool.filter(w=>!state.cards[w.id]).slice(0,Math.max(0,state.settings.goal-s.newToday)).map(w=>w.id);
-  else if(kind==='favorites')queue=state.favorites.filter(id=>words.some(w=>w.id===id)).slice(0,30);
-  else queue=pool.filter(w=>state.cards[w.id]).slice(0,20).map(w=>w.id);
-  if(!queue.length&&kind==='practice')queue=pool.slice(0,10).map(w=>w.id);
+  else if(kind==='learn')queue=shuffle(pool.filter(w=>!state.cards[w.id]),random).slice(0,Math.max(1,state.settings.goal-s.newToday>0?state.settings.goal-s.newToday:state.settings.goal)).map(w=>w.id);
+  else if(kind==='favorites')queue=shuffle(state.favorites.filter(id=>words.some(w=>w.id===id)),random).slice(0,30);
+  else queue=shuffle(pool.filter(w=>state.cards[w.id]),random).slice(0,20).map(w=>w.id);
+  if(!queue.length&&kind==='practice')queue=shuffle(pool,random).slice(0,10).map(w=>w.id);
   return queue.length ? { queue, kind, mode, total: queue.length, completed: 0, answered: 0, correct: 0, startedAt: now.toISOString() } : null;
 }
 export function grade(state,id,rating,now=new Date()) {
-  const session=state.session;
+  const session=currentSession(state);
   if(!session||session.queue[0]!==id)throw new Error('当前单词已变化，请重试');
-  const draft=structuredClone(state), ss=draft.session;
+  const draft=structuredClone(state), ss=currentSession(draft);
   const practice=['practice','favorites'].includes(ss.kind);
   if(!practice){
     const isNew=!draft.cards[id], result=nextCard(draft.cards[id],rating,now);
@@ -107,7 +136,7 @@ export function validateBackup(input) {
   if(!Array.isArray(s.customBooks)||!s.customBooks.every(b=>safeId(b.id)&&safeText(b.name,100))||!Array.isArray(s.customWords))fail();
   if(s.customWords.length>30000||new Set(s.customWords.map(w=>w.id)).size!==s.customWords.length)fail();
   for(const w of s.customWords){if(!safeId(w.id)||!s.customBooks.some(b=>b.id===w.book))fail();try{validateWords([w],w.book);}catch{fail();}}
-  const clean=structuredClone(s);clean.session=null;clean.version=APP_VERSION;
+  const clean=structuredClone(s);clean.session=null;clean.practiceSessions={};clean.activeSessionKey='study';clean.version=APP_VERSION;
   clean.customWords=clean.customWords.map(w=>({...validateWords([w],w.book)[0],id:w.id}));
-  return clean;
+  return migrateState(clean);
 }

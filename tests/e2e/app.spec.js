@@ -45,3 +45,40 @@ test('production shell, all books and learned state work after server stops and 
 test('invalid backup rejected, HTML imports treated as text, no accidental code execution',async({page})=>{
  await page.getByRole('button',{name:'我的',exact:true}).click();const chooser=page.waitForEvent('filechooser');await page.getByRole('button',{name:'恢复备份'}).click();await (await chooser).setFiles({name:'broken.json',mimeType:'application/json',buffer:Buffer.from('{"app":"kotoba-local","version":1,"state":{}}')});await expect(page.locator('#toast')).toContainText('备份格式');await expect(page.locator('#goal')).toHaveValue('20');
 });
+
+test('automatic speech once per card, broad tap area, and independent practice resume',async({page})=>{
+ await page.addInitScript(()=>{
+   window.spoken=[];
+   Object.defineProperty(window,'speechSynthesis',{configurable:true,value:{getVoices:()=>[{lang:'ja-JP',voiceURI:'test-ja',localService:true}],cancel:()=>{},speak:u=>window.spoken.push(u.text)}});
+   Object.defineProperty(window,'SpeechSynthesisUtterance',{configurable:true,value:class{constructor(text){this.text=text;}}});
+ });
+ await page.reload();await page.getByRole('button',{name:'开始学新词'}).click();
+ await expect.poll(()=>page.evaluate(()=>window.spoken.length)).toBe(1);
+ const first=await page.locator('.study-word').textContent();
+ await page.locator('.word-stage').click({position:{x:8,y:8}});await expect.poll(()=>page.evaluate(()=>window.spoken.length)).toBe(2);
+ await page.getByRole('button',{name:'朗读当前单词'}).click();await expect.poll(()=>page.evaluate(()=>window.spoken.length)).toBe(3);
+ await page.getByRole('button',{name:'查看释义'}).click();expect(await page.evaluate(()=>window.spoken.length)).toBe(3);
+ await page.getByRole('button',{name:/记住了/}).click();await expect.poll(()=>page.evaluate(()=>window.spoken.length)).toBe(4);
+ const second=await page.locator('.study-word').textContent();expect(second).not.toBe(first);
+ await page.getByRole('button',{name:'暂停学习'}).click();await page.getByRole('button',{name:'假名拼写',exact:true}).click();
+ await expect(page.locator('#spelling')).toBeVisible();expect(await page.evaluate(()=>window.spoken.length)).toBe(4);
+ const prompt=await page.locator('.write-prompt').textContent();await page.locator('#spelling').fill('テスト');expect(await page.evaluate(()=>window.spoken.length)).toBe(4);
+ await page.getByRole('button',{name:'暂停学习'}).click();await page.getByRole('button',{name:/继续上次学习/}).click();await expect(page.locator('.study-word')).toHaveText(second);await expect(page.locator('.study-header')).toContainText('1 / 20');
+ await page.getByRole('button',{name:'暂停学习'}).click();await page.getByRole('button',{name:'继续假名拼写',exact:true}).click();await expect(page.locator('.write-prompt')).toHaveText(prompt);await page.waitForURL('**/#study');await page.reload();await expect(page.locator('.write-prompt')).toHaveText(prompt);
+ await page.getByRole('button',{name:'直接看答案'}).click();await page.getByRole('button',{name:/记住了/}).click();await expect(page.locator('.completion')).toBeVisible();
+ await page.getByRole('button',{name:'回到今日'}).click();await page.getByRole('button',{name:/继续上次学习/}).click();await expect(page.locator('.study-word')).toHaveText(second);await page.waitForURL('**/#study');await page.reload();await expect(page.locator('.study-word')).toHaveText(second);await expect(page.locator('.study-header')).toContainText('1 / 20');
+});
+
+test('daily target permits extra groups without changing the goal',async({page})=>{
+ await page.getByRole('button',{name:'我的',exact:true}).click();await page.locator('#goal').selectOption('5');await page.getByRole('button',{name:'今日',exact:true}).click();await page.getByRole('button',{name:'开始学新词'}).click();
+ const seen=new Set();
+ for(let i=0;i<5;i++){
+  await expect(page.locator('.study-header')).toContainText(`${i} / 5`);seen.add(await page.locator('.study-word').textContent());
+  await page.getByRole('button',{name:'查看释义'}).click();await page.getByRole('button',{name:/记住了/}).click();
+ }
+ await expect(page.locator('.completion')).toBeVisible();await page.getByRole('button',{name:'回到今日'}).click();await page.getByRole('button',{name:'继续学新词'}).click();
+ await expect(page.locator('.study-header')).toContainText('0 / 5');expect(seen.has(await page.locator('.study-word').textContent())).toBe(false);
+ for(let i=0;i<5;i++){await expect(page.locator('.study-header')).toContainText(`${i} / 5`);await page.getByRole('button',{name:'查看释义'}).click();await page.getByRole('button',{name:/记住了/}).click();}
+ await expect(page.locator('.completion')).toBeVisible();await page.getByRole('button',{name:'继续学新词'}).click();await expect(page.locator('.study-header')).toContainText('0 / 5');
+ await page.getByRole('button',{name:'暂停学习'}).click();await expect(page.locator('.daily-numbers')).toContainText('10');await page.getByRole('button',{name:'我的',exact:true}).click();await expect(page.locator('#goal')).toHaveValue('5');
+});
