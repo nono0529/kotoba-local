@@ -117,4 +117,4 @@ npm.cmd run test:e2e
 - [open-spaced-repetition/ts-fsrs](https://github.com/open-spaced-repetition/ts-fsrs)：MIT，复习算法。
 - [soldair/node-qrcode](https://github.com/soldair/node-qrcode)：MIT，安装二维码。
 
-原创应用代码、图标与插画采用 [MIT](LICENSE)。言叶是独立项目，与“不背单词”没有关联，不包含其商业素材或会员服务。
+原创应用代码、图标与插画采用 [MIT](LICENSE)。
